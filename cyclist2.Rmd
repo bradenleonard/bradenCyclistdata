@@ -1,0 +1,444 @@
+---
+title: "Cyclist Analysis"
+author: "Braden Leonard"
+date: "July 16, 2020"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+
+## Cyclist Full Year Analysis
+
+### This is the analysis for the Google Data Analytics Certificate capstone Project
+
+  The scenario presented was the marketing team from Cyclist, a bike-sharing company in Chicago, wants to maximize their annual memberships. They wanted to understand how casual riders and membership riders use the bike share differently. Their goal is to learn how to convert casual riders to annual members. I will follow the Ask, Prepare, Process, Analyze, Share and Act steps to the data analysis.
+  
+## Ask  
+
+  Now if this were an actual business task, I would ask the questions to their representatives to better understand what they are hoping to get presented to them, what metrics we are working with(possible errors), and if they would like suggestions. Since this is a capstone project, we will have to try and answer these questions ourselves.
+  
+## Prepare
+  They provided us a divvy-data bases of all their trip data since they started in 2014. I since we require the most recent data for our analysis to be relevant, We loaded the most recent data(2019-2020).
+  
+   Most of these files are too large for programs like excel, so R is the perfect fit for cleaning and manipulating this large dataset.
+  
+  
+## Process 
+  To start we will need to install the necessary packages: 
+```{r}
+install.packages("tidyverse")
+install.packages("lubridate")
+```
+
+We will then have to load these packages:
+```{r}
+library(tidyverse)
+library(lubridate)
+```
+Now we have to import the last 4 quarters for data to be cleaned. 
+
+```{r}
+q1 <- read.csv("Divvy_Trips_2019_Q2.csv")
+q2 <- read.csv("Divvy_Trips_2019_Q3.csv")
+q3 <- read.csv("Divvy_Trips_2019_Q4.csv")
+q4 <- read.csv("Divvy_Trips_2020_Q1.csv")
+```
+
+Now lets take a look at these data sets so see how they are similar or different. 
+
+```{r}
+colnames(q1)
+colnames(q2)
+colnames(q3)
+colnames(q4)
+```
+###Cleaning 
+Looks like the naming for each column is not consistent and will need to be changed if we want to merge these into one data set. We will use q4 (in this case the first quarter of 2020) as a baseline for their column names. 
+
+```{r}
+(q1 <- rename(q1
+              ,ride_id=X01...Rental.Details.Rental.ID
+              ,rideable_type=X01...Rental.Details.Bike.ID
+              ,started_at=X01...Rental.Details.Local.Start.Time
+              ,ended_at= X01...Rental.Details.Local.End.Time
+              ,start_station_name=X03...Rental.Start.Station.Name
+              ,start_station_id=X03...Rental.Start.Station.ID
+              ,end_station_name=X02...Rental.End.Station.Name
+              ,end_station_id=X02...Rental.End.Station.ID
+              ,member_casual=User.Type))
+
+(q2 <- rename(q2
+              ,ride_id=trip_id
+              ,rideable_type=bikeid
+              ,started_at=start_time
+              ,ended_at=end_time
+              ,start_station_name=from_station_name
+              ,start_station_id=from_station_id
+              ,end_station_name=to_station_name
+              ,end_station_id=to_station_id
+              ,member_casual=usertype))
+
+(q3 <- rename(q3
+              ,ride_id=trip_id
+              ,rideable_type=bikeid
+              ,started_at=start_time
+              ,ended_at=end_time 
+              ,start_station_name=from_station_name
+              ,start_station_id=from_station_id
+              ,end_station_name=to_station_name
+              ,end_station_id=to_station_id
+              ,member_casual=usertype))
+
+
+```
+
+```{r}
+colnames(q1)
+colnames(q2)
+colnames(q3)
+colnames(q4)
+
+ 
+```
+
+
+
+
+Now lets inspect these dataframe to see what columns will be useful
+
+```{r}
+str(q1)
+str(q2)
+str(q3)
+str(q4)
+
+```
+Need to convert ride_id and rideable_id to characters so they can stack correctly.
+
+```{r}
+q4<-  mutate(q4, ride_id = as.character(ride_id)
+                   ,rideable_type = as.character(rideable_type)) 
+q3<-  mutate(q3, ride_id = as.character(ride_id)
+                   ,rideable_type = as.character(rideable_type)) 
+q2<-  mutate(q2, ride_id = as.character(ride_id)
+                   ,rideable_type = as.character(rideable_type)) 
+q1<-  mutate(q1, ride_id = as.character(ride_id)
+                   ,rideable_type= as.character(rideable_type)) 
+
+```
+ Now lets stack the data frames into one so it is easy to clean
+ 
+```{r}
+all_trips <- bind_rows(q1,q2,q3,q4)
+```
+
+Lets take a look at all the columns in our new data frame 
+
+```{r}
+colnames(all_trips)
+```
+Looks great we just need to trim the columns that are not very useful for us. Lets clean it up
+
+```{r}
+all_trips <- all_trips %>% 
+  select(-c(start_lat, start_lng, end_lat, end_lng, birthyear, gender, tripduration, Member.Gender, X05...Member.Details.Member.Birthday.Year, X01...Rental.Details.Duration.In.Seconds.Uncapped ))
+```
+
+Now lets check the data frame
+
+```{r}
+colnames(all_trips)
+```
+
+Great,we now have one data frame with all columns useful and we can now start to clean the data. 
+
+```{r}
+nrow(all_trips)
+```
+We have lots of entries, that is great our sample size is large!
+
+```{r}
+dim(all_trips)
+```
+
+Lets check the data types to make sure they are what we want before calculation. 
+
+```{r}
+str(all_trips)
+```
+```{r}
+summary(all_trips)
+```
+
+Lots of interesting things to consider.
+
+Looks like the started_at and ended_at columns are characters, we will want these in a date-time to do some calculation later. In the member_casual column, there theoretically should only have two entries, either casual or member. It seems there is many different types of entries like subscriber, Subscriber, casual, or member. We will need it to be in two categories in order to do our analysis. Rideable type is also some variance in numbers which must represent something like a code). We will need to look into that too. 
+
+We will have to add columns to the data frame to find things like trip duration, day of the week etc.
+
+First lets see a table of values from the member_casual column
+
+```{r}
+table(all_trips$member_casual)
+```
+4 different entries. Easy fix. Since the conversations with Cyclist they referred to the different types of customers as casual and members. So we will change Subscriber to member and Customer to casual
+
+```{r}
+all_trips <- all_trips %>% 
+  mutate(member_casual= recode(member_casual
+                               ,"Subscriber"="member"
+                               ,"Customer"="casual"))
+
+```
+
+Lets check to see if it changed
+```{r}
+table(all_trips$member_casual)
+```
+Great! Now there is only two different types of customers, easy for comparing the two. 
+
+Now lets add columns for date, month, day,and year for each ride. 
+
+```{r}
+all_trips$date <- as.Date(all_trips$started_at)
+all_trips$month <- format(as.Date(all_trips$date), "%m")
+all_trips$day <- format(as.Date(all_trips$date), "%d")
+all_trips$year <- format(as.Date(all_trips$date), "%Y")
+all_trips$day_of_week <- format(as.Date(all_trips$date), "%A")
+```
+
+Lets take a quick look to see how it looks. 
+
+```{r}
+head(all_trips)
+```
+Now lets add a ride length column
+
+```{r}
+all_trips$ride_length <- difftime(all_trips$ended_at, all_trips$started_at)
+```
+
+Now lets take a look at data types
+
+```{r}
+str(all_trips)
+```
+Looks like we have to convert the ride length to numeric from a factor.
+
+```{r}
+is.factor(all_trips$ride_length)
+```
+```{r}
+all_trips$ride_length <- as.numeric(as.character(all_trips$ride_length))
+```
+
+```{r}
+is.numeric(all_trips$ride_length)
+```
+
+Lets check a summary again. 
+
+```{r}
+summary(all_trips)
+```
+Interesting. Looks like there are some values for ride length are negative. We can remove the negative values. 
+
+
+There are also some trips where the bikes are taken out for maintenance where the start station name is HQ QR. We can remove these from the data so it does not affect the analysis. 
+```{r}
+all_trips_v2 <- all_trips[!(all_trips$start_station_name=="HQ QR"| all_trips$ride_length<0),]
+```
+
+Now our data should be clean for some analysis. Since some rows were removed I renamed the data frame so it's easier to go back and check the data that was removed. 
+
+In saying that. Lets get looking at what the data is telling us. 
+
+```{r}
+is.Date(all_trips_v2$started_at)
+```
+Lets make it a datetime format
+```{r}
+all_trips_v2$started_at <- ymd_hms(all_trips_v2$started_at)
+```
+
+```{r}
+all_trips_v2$ended_at <- ymd_hms(all_trips_v2$ended_at)
+```
+
+```{r}
+class(all_trips_v2$started_at)
+class(all_trips_v2$ended_at)
+```
+
+Now lets make a 'start_time' and 'end_time' column.
+
+```{r}
+all_trips_v2$start_time <- format(all_trips_v2$started_at, format = "%H:%M:%S")
+all_trips_v2$start_time <- as.POSIXct(all_trips_v2$start_time, format = "%H:%M:%S")
+```
+
+```{r}
+all_trips_v2$end_time <- format(all_trips_v2$ended_at, format = "%H:%M:%S")
+all_trips_v2$end_time <- as.POSIXct(all_trips_v2$end_time, format = "%H:%M:%S")
+```
+
+
+# Analysis
+
+Lets get an idea how the ride lengths average, min and max values.
+
+```{r}
+summary(all_trips_v2$ride_length)
+```
+
+Note this is in seconds. So on mean trip length is 1479 seconds or just over 24 and a half minutes.
+
+Lets see how the times are different bases on the membership type. 
+
+```{r}
+aggregate(all_trips_v2$ride_length ~ all_trips_v2$member_casual, FUN = mean)
+aggregate(all_trips_v2$ride_length ~ all_trips_v2$member_casual, FUN = median)
+aggregate(all_trips_v2$ride_length ~ all_trips_v2$member_casual, FUN = max)
+aggregate(all_trips_v2$ride_length ~ all_trips_v2$member_casual, FUN = min)
+
+```
+
+Looks like casuals have longer average and median ride times compared to members. Interesting, lets see how this interacts with day of the week. 
+
+```{r}
+aggregate(all_trips_v2$ride_length ~ all_trips_v2$member_casual + all_trips_v2$day_of_week, FUN = mean)
+```
+Looks like the days are out of order, lets fix that. 
+```{r}
+all_trips_v2$day_of_week <- ordered(all_trips_v2$day_of_week, levels=c("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"))
+
+```
+
+```{r}
+aggregate(all_trips_v2$ride_length ~ all_trips_v2$member_casual + all_trips_v2$day_of_week, FUN = mean)
+```
+On average, the trip length is longer for everyday for the casual riders. 
+
+Lets continue to investigate. 
+
+```{r}
+all_trips_v2 %>% 
+  mutate(weekday = wday(started_at, label = TRUE)) %>%
+ group_by(member_casual, weekday) %>%  
+  summarise(number_of_rides = n()							 
+  ,average_duration = mean(ride_length)) %>% 	
+  arrange(member_casual, weekday)		
+```
+Lets make a quick visualization to get an idea of whats going on before we take the visualization to tableau. 
+
+```{r}
+all_trips_v2 %>% 
+  mutate(weekday = wday(started_at, label = TRUE)) %>% 
+  group_by(member_casual, weekday) %>% 
+  summarise(number_of_rides = n()
+            ,average_duration = mean(ride_length)) %>% 
+  arrange(member_casual, weekday)  %>% 
+  ggplot(aes(x = weekday, y = number_of_rides, fill = member_casual)) +
+  geom_col(position = "dodge") +
+  scale_y_continuous(labels = function(x) format(x, scientific = FALSE))+
+  labs(title = "Total Number of rides by customer type and day of the week", y= "Number of Riders", x= "Day of the Week")
+
+```
+
+Seems like members use the bikes during the week, less on weekends and causal are the exact opposite. 
+
+Lets create a visual based on average ride duration
+
+```{r}
+all_trips_v2 %>% 
+  mutate(weekday = wday(started_at, label = TRUE)) %>% 
+  group_by(member_casual, weekday) %>% 
+  summarise(number_of_rides = n()
+            ,average_duration = mean(ride_length)) %>% 
+  arrange(member_casual, weekday)  %>% 
+  ggplot(aes(x = weekday, y = average_duration, fill = member_casual)) +
+  geom_col(position = "dodge")+
+  labs(title = "Average ride  by customer type and day of the week", x= "Day of the Week", y= "Average Ride Length(s)")
+
+```
+
+
+So it's clear the average ride time for casuals is higher than members on every day of the week. There could be reasons for this, but lets consider the month of the year and see if anything else comes to light. 
+
+```{r}
+all_trips_v2 %>% 
+  mutate(month = month(started_at, label = TRUE)) %>% 
+  group_by(member_casual, month) %>% 
+  summarise(average_duration = mean(ride_length)) %>% 
+  arrange(member_casual, month)  %>% 
+  ggplot(aes(x = month, y = average_duration, fill = member_casual)) +
+  geom_col(position = "dodge")+
+  labs(title = "Average ride  by customer type and month", x= "Month", y= "Average Ride Length(s)")
+
+```
+```{r}
+all_trips_v2 %>% 
+  mutate(month = month(started_at, label=TRUE)) %>% 
+  group_by(member_casual, month) %>% 
+  summarise(number_of_rides = n()) %>% 
+    arrange(member_casual, month)  %>% 
+  ggplot(aes(x = month, y = number_of_rides, fill = member_casual)) +
+  geom_col(position = "dodge")+
+  scale_y_continuous(labels = function(x) format(x, scientific = FALSE))+
+  labs(title = "Number of rides  by customer type and month", x= "Month", y= "Number of Rides")
+```
+So it seems the average ride duration is higher for the casuals all year round, but their is more consistent number of rides for members year round. With the summer months being more popular for both customer types, which makes with the snow in the winter months. It also seems to be the case that members are more consistent throughout the year which may indicate them using the bikes to commute to work. Lets the the average start times and see if this is the case.
+
+```{r}
+all_trips_v2 %>% 
+  group_by(member_casual, start_time) %>% 
+  summarise(number_of_rides = n()) %>% 
+ggplot(aes(x = start_time, y = number_of_rides, color = member_casual, group = member_casual))+
+  geom_line() +
+  scale_x_datetime(date_breaks = "1 hour", minor_breaks = NULL,
+                   date_labels = "%H:%M", expand = c(0,0))+
+  labs(title ="Bike Start time", x = "Time of the day", y = "No. of rides")+
+  theme(axis.text.x = element_text(angle = 90))
+```
+#Act
+It appears members are taking out bikes mostly from 7-9 am and the again from 4-7 pm. This would back up the prediction of members using the bikes to commute to work. The casuals use the bikes mostly from 4-7 pm, similar to members, but no influx in the morning. This may suggest casuals using the bikes as an outlet for exercise. THe members may be doing this as well. 
+
+
+So there was a lot of information we have gathered here. 
+
+**Casuals**- Rides tend to be longer and during the warmer months. Hot times for casuals are from 4-7pm. This hints to using the bikes for exercise and for leisure. 
+
+**Members**- Rides are shorter than casuals and are consistent throughout the year (yes it is still higher during the warmer months). Hot times for the members are from 7-9 am and 4-7 pm. This indicates members are using the bikes as a means of transportation to commute to work. 
+
+Since the goal of the stakeholders was to understand how to convert casuals to members in order to maximize their profit. This could be done in  numerous ways. Perhaps advertising in high density areas like subways and bus stops to show how people can use the bikes as a means to commute to work. Perhaps its saving money, like it's cheaper than public transit or cheaper than a gym membership will convert the casual. 
+
+These options would be presented to the stakeholders but the analysis is primarily for them to understand how casuals and members use the bikes differently.
+
+
+#Extension Analaysis for Stake Holders
+
+Possibility for further exploration would be to check the stations that are popular with members, with casuals, and the ones that are not. This may give the stake holders a better idea where their members are using their bikes and to see if there are high traffic areas with more casuals than members. 
+
+
+Here is the amount of trips between each station to see for a heat map in future. This was not asked by the stake holders but if I was in communication with them, I would definitely ask if this would help them target advertising in certain places/stations. I would also require a map of Chicago and the points of their stations to help show traffic flow and most popular stations based on the membership type. 
+```{r}
+all_trips_v2 %>% 
+ group_by( start_station_name, end_station_name, member_casual) %>%  
+  summarise(number_of_rides = n()	) %>% 	
+  arrange (start_station_name, end_station_name, member_casual)		
+```
+```{r}
+ all_trips_v2 %>% 
+ group_by( start_station_name, end_station_name ) %>%  
+  summarise(number_of_rides = n()	) %>% 	
+  arrange (desc(number_of_rides))
+
+```
+```{r}
+write.csv(station_data, file= "C:/Users/baleo/OneDrive/Documents/Cyclist/station_traffic_data.csv")
+```
+
+
+
+
